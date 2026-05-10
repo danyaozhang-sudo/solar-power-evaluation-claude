@@ -31,7 +31,7 @@ market_fee_rate = 0.02         # 市场费用分摊
 
 # 融资参数
 interest_rate = 0.04           # 融资利率
-loan_years = 18                # 融资期限
+loan_years = 15                # 融资期限
 operating_years = 20           # 经营期
 residual_rate = 0.05           # 残值率（光伏组件回收价值高于风电）
 
@@ -94,16 +94,16 @@ def calculate(unit_inv, leverage):
 
         # 运维费分段 + 第10年逆变器替换
         if year <= 5:
-            om_rate = 0.012
+            om_rate = 0.02
         elif year <= 10:
-            om_rate = 0.018
-        else:
             om_rate = 0.025
+        else:
+            om_rate = 0.03
         om[i] = capacity_w * om_rate
 
         # 逆变器替换（第10年）
         if year == 10:
-            inverter_replacement_cost = capacity_w * 0.10
+            inverter_replacement_cost = capacity_w * 0.05
             om[i] += inverter_replacement_cost
 
         acc_dep = annual_dep * year
