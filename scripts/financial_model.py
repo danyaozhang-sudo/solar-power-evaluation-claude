@@ -8,19 +8,13 @@
 
 输出：投资边界 + 出售边界（共2个任务），含每年净利润表和净现金流量表
 
-## 分段定价处理（重要）
+## 分段定价处理（重要 — 参见 references/segmented-pricing-methodology.md）
 
 对于参与机制电价竞价的增量项目，机制电价通常只在特定年限内有效
 （如广东光伏12年），到期后需按市场化电价结算。
 
 本脚本使用单一有效电价贯穿运营期。如需处理分段定价：
-方法1：手动计算加权均价
-  运营期加权均价 = (前N年有效电价*N + 后M年有效电价*M) / 运营期
-方法2：修改 calculate() 函数中的电价计算
-  在 calculate() 中新增：
-    price_schedule = [0.3381]*12 + [0.1800]*8
-    将 rev[i] = gen[i] * effective_price_base
-    改为 rev[i] = gen[i] * price_schedule[i]
+参见 `references/segmented-pricing-methodology.md`。
 """
 
 import numpy as np
@@ -33,11 +27,14 @@ annual_hours = 1300            # 等效利用小时数（山东德州 GHI~1550kW
 curtailment_rate = 0.03        # 限电率（山东属消纳友好省，近负荷中心，弃光率低）
 degradation_rate = 0.005       # 组件年衰减率（0.5%/年）
 
-# 电价（情况一：不参与机制电价竞价 或 情况二：参与机制电价竞价）
-# 修改 mlt_price / mlt_ratio 即可切换场景
-mlt_price = 0.3800             # 电量加权均价 元/kWh（情况一=中长协/现货加权，情况二=机制电价）
+# 电价（独立设置中长期和现货，两个品种不能混用）
+# 常见设置方式（mlt_ratio + spot_ratio 必须 = 1.0）：
+#   - 100%现货(用户说"现货价"时用此)：mlt_ratio=0, spot_ratio=1.0
+#   - 100%中长期：mlt_ratio=1.0, spot_ratio=0
+#   - 混合：mlt_ratio=0.7, spot_ratio=0.3
+mlt_price = 0.3800             # 中长期交易均价 元/kWh（用户说"中长期价格"时设此，不含绿电）
 mlt_ratio = 1.0                # 情况一=0.70, 情况二=1.00
-spot_price = 0.3000            # 现货交易均价 元/kWh（情况二下忽略）
+spot_price = 0.3000            # 现货市场均价 元/kWh（用户说"现货价"时设此，和 mlt_price 是不同品种）
 spot_ratio = 0.0               # 情况一=0.30, 情况二=0.00
 green_price = 0.0300           # 绿电溢价 元/kWh（与中长协/现货叠加）
 penalty = 0.015                # 两个细则考核 元/kWh
@@ -55,7 +52,8 @@ om_vat_rate = 0.06             # 运维费增值税率（6% 服务为主 / 13% �
 additional_tax_rate = 0.12
 income_tax_rate = 0.25
 
-# 收益率参数
+# 收益率参数（含折旧年限）
+depreciation_years = 20        # 折旧年限（光伏主流20年，残值率5%，直线法；经营期内折完前20年，后5年无折旧）
 wacc = 0.055                   # 全投资WACC
 equity_cost = 0.07             # 资本金成本
 
@@ -78,7 +76,7 @@ def calculate(unit_inv, leverage):
     ti = unit_inv * capacity_w
     debt = ti * leverage
     equity = ti - debt
-    annual_dep = ti * (1 - residual_rate) / operating_years
+    annual_dep = ti * (1 - residual_rate) / depreciation_years
     annual_principal_amt = debt / loan_years
 
     rev = np.zeros(operating_years)
@@ -120,7 +118,7 @@ def calculate(unit_inv, leverage):
             inverter_replacement = capacity_w * 0.05
             om[i] += inverter_replacement
 
-        acc_dep = annual_dep * year
+        acc_dep = annual_dep * min(year, depreciation_years)  # 折旧折完后保持净值不变
         nbv = max(0, ti - acc_dep)
         nbv_arr[i] = nbv
         ins[i] = nbv * 0.002
