@@ -65,6 +65,7 @@ search_hi = 5.5                # 最高搜索范围 元/W（含分布式上限�
 capacity_kw = capacity_mw * 1000
 capacity_w = capacity_mw * 1_000_000
 base_annual_gen_kwh = capacity_kw * annual_hours * (1 - curtailment_rate)
+base_annual_gen_mwh = base_annual_gen_kwh / 1000
 
 weighted_price = mlt_ratio * mlt_price + spot_ratio * spot_price
 effective_price_base = (weighted_price + green_price - penalty) * (1 - market_fee_rate)
@@ -92,9 +93,6 @@ def calculate(unit_inv, leverage):
     vat_credit_cf_unlevered = 0.0
     vat_payable = np.zeros(operating_years)
     add_tax_unlevered = np.zeros(operating_years)
-
-    # 逆变器替换（简化处理：第12年一次性全部替换，0.05元/W，仅此一次）
-    inverter_replacement = 0.0
 
     for i in range(operating_years):
         year = i + 1
@@ -208,9 +206,11 @@ def calculate(unit_inv, leverage):
 
     min_dscr = min(dscr[:loan_years])
 
+    # 用于还款的现金流
     avail_for_ds = ebitda - add_tax - income_tax
 
     return {
+        # 汇总指标
         'unit_inv': unit_inv,
         'ti': ti,
         'debt': debt,
@@ -238,6 +238,8 @@ def calculate(unit_inv, leverage):
         'net_cf': net_cf,
         'avail_for_ds': avail_for_ds,
         'nbv': nbv_arr,
+        'fcf': fcf,
+        'eq_cf': eq_cf,
     }
 
 
@@ -350,6 +352,129 @@ def print_cf_table(r, title, leverage):
         print(f"  股权现金流=净利润+折旧-当年偿还本金 | 全投资IRR使用无杠杆附加税计算")
 
 
+def print_boundary_conditions():
+    """打印模型边界条件表（第六节头部）"""
+    print(f"\n{'='*80}")
+    print(f"  六、财务测算结果")
+    print(f"{'='*80}")
+    print(f"\n  【6.1 模型边界条件】")
+    print(f"  {'─'*50}")
+    print(f"  {'参数':<28} {'数值':>16}")
+    print(f"  {'─'*50}")
+    print(f"  {'装机容量':<28} {capacity_mw:>16} MW")
+    print(f"  {'等效利用小时数':<28} {annual_hours:>16} h")
+    print(f"  {'限电率':<28} {curtailment_rate*100:>13.2f} %")
+    print(f"  {'年净发电量':<28} {base_annual_gen_mwh:>16,.0f} MWh")
+    print(f"  {'有效电价':<28} {effective_price_base:>16.4f} 元/kWh")
+    print(f"  {'经营期':<28} {operating_years:>16} 年")
+    print(f"  {'融资利率':<28} {interest_rate*100:>13.0f} %")
+    print(f"  {'融资期限':<28} {loan_years:>16} 年")
+    print(f"  {'折旧年限':<28} {depreciation_years:>16} 年")
+    print(f"  {'残值率':<28} {residual_rate*100:>13.0f} %")
+    print(f"  {'运维费第1段(1-5年)':<28} {0.02:>16.4f} 元/W·年")
+    print(f"  {'运维费第2段(6-10年)':<28} {0.025:>16.4f} 元/W·年")
+    print(f"  {'运维费第3段(11-25年)':<28} {0.03:>16.4f} 元/W·年")
+    print(f"  {'逆变器替换(第12年)':<28} {0.05:>16.4f} 元/W")
+    print(f"  {'保险费率':<28} {'净值×0.2%':>16}")
+    print(f"  {'增值税率':<28} {vat_rate*100:>13.0f} %")
+    print(f"  {'所得税率':<28} {income_tax_rate*100:>13.0f} %")
+    print(f"  {'─'*50}")
+
+
+def print_appendix_tables(r1, r4):
+    """打印第八节：财务指标附表（4张表）"""
+    print(f"\n{'='*80}")
+    print(f"  八、财务指标附表")
+    print(f"{'='*80}")
+
+    # 表1：资本金投资利润表（出售边界·80%融资）
+    print(f"\n{'─'*130}")
+    print(f"  第八项·表1：资本金投资利润表（出售边界·80%融资）（单位：万元）")
+    print(f"{'─'*130}")
+    header = (f"{'年份':>6} {'营业收入':>10} {'运维费':>8} {'保险费':>8} "
+              f"{'折旧':>8} {'利息':>8} {'增值税及附加':>10} {'所得税':>8} {'净利润':>8}")
+    print(header)
+    print(f"{'─'*130}")
+    for i in range(operating_years):
+        y = i + 1
+        print(f"{y:>6} "
+              f"{r4['rev'][i]/1e4:>10.2f} "
+              f"{r4['om'][i]/1e4:>8.2f} "
+              f"{r4['ins'][i]/1e4:>8.2f} "
+              f"{r4['annual_dep']/1e4:>8.2f} "
+              f"{r4['interest'][i]/1e4:>8.2f} "
+              f"{r4['add_tax'][i]/1e4:>10.2f} "
+              f"{r4['income_tax'][i]/1e4:>8.2f} "
+              f"{r4['net_profit'][i]/1e4:>8.2f}")
+    print(f"{'─'*130}")
+    print(f"  公式：营业收入=年发电量×有效电价 | 运维费=装机×单位费率(分段) | 保险费=净值×0.2%")
+    print(f"  折旧=总投资×(1-残值率)/{depreciation_years}年 | 利息=期初余额×{interest_rate*100:.0f}%")
+    print(f"  所得税=max(0,(收入-运维-保险-折旧-利息-增值税及附加)×{income_tax_rate*100:.0f}%)")
+    print(f"  净利润=营业收入-运维费-保险费-折旧-利息-增值税及附加-所得税")
+
+    # 表2：全投资净现金流表
+    print(f"\n{'─'*130}")
+    print(f"  第八项·表2：全投资净现金流表（出售边界口径）（单位：万元）")
+    print(f"  说明：基于出售边界计算，全投资FCF使用无杠杆附加税（剔除利息税盾）")
+    print(f"{'─'*130}")
+    header = f"{'年份':>6} {'全投资FCF':>14}"
+    print(header)
+    print(f"{'─'*130}")
+    print(f"{' 0':>6} {r4['fcf'][0]/1e4:>14.2f}")
+    for i in range(operating_years):
+        print(f"{i+1:>6} {r4['fcf'][i+1]/1e4:>14.2f}")
+    print(f"{'─'*130}")
+    print(f"  全投资IRR: {r4['full_irr']:.2f}%")
+    print(f"{'─'*130}")
+
+    # 表3：资本金投资现金流表（出售边界·80%融资）
+    print(f"\n{'─'*130}")
+    print(f"  第八项·表3：资本金投资现金流表（出售边界·80%融资）（单位：万元）")
+    print(f"  说明：股权现金流 = 净利润 + 折旧 - 当年偿还本金")
+    print(f"{'─'*130}")
+    header = f"{'年份':>6} {'净利润':>10} {'折旧':>10} {'偿还本金':>10} {'股权现金流':>12}"
+    print(header)
+    print(f"{'─'*130}")
+    print(f"{' 0':>6} {'':>10} {'':>10} {'':>10} {r4['eq_cf'][0]/1e4:>12.2f}")
+    for i in range(operating_years):
+        ecf = r4['net_profit'][i] + r4['annual_dep'] - r4['principal'][i]
+        print(f"{i+1:>6} "
+              f"{r4['net_profit'][i]/1e4:>10.2f} "
+              f"{r4['annual_dep']/1e4:>10.2f} "
+              f"{r4['principal'][i]/1e4:>10.2f} "
+              f"{ecf/1e4:>12.2f}")
+    print(f"{'─'*130}")
+    print(f"  税后资本金IRR: {r4['equity_irr']:.2f}%")
+    print(f"{'─'*130}")
+
+    # 表4：偿债覆盖计算表（投资边界·100%融资）
+    print(f"\n{'─'*130}")
+    print(f"  第八项·表4：偿债覆盖计算表（投资边界·100%融资）（单位：万元）")
+    print(f"  说明：DSCR = 可用于还款的净现金流 / 当年应还本息")
+    print(f"{'─'*130}")
+    header = (f"{'年份':>6} {'EBITDA':>10} {'增值税及附加':>10} {'所得税':>8} "
+              f"{'可用于还款':>10} {'应还本金':>10} {'应还利息':>10} {'应还本息':>10} {'DSCR':>8}")
+    print(header)
+    print(f"{'─'*130}")
+    for i in range(operating_years):
+        y = i + 1
+        ds = r1['principal'][i] + r1['interest'][i]
+        dscr_val = f"{r1['dscr'][i]:>8.2f}" if r1['dscr'][i] != float('inf') else f"{'∞':>8}"
+        print(f"{y:>6} "
+              f"{r1['ebitda'][i]/1e4:>10.2f} "
+              f"{r1['add_tax'][i]/1e4:>10.2f} "
+              f"{r1['income_tax'][i]/1e4:>8.2f} "
+              f"{r1['avail_for_ds'][i]/1e4:>10.2f} "
+              f"{r1['principal'][i]/1e4:>10.2f} "
+              f"{r1['interest'][i]/1e4:>10.2f} "
+              f"{ds/1e4:>10.2f} "
+              f"{dscr_val}")
+    print(f"{'─'*130}")
+    print(f"  最小DSCR: {r1['min_dscr']:.4f}")
+    print(f"  公式：可用还款=EBITDA-增值税及附加-所得税 | DSCR=可用还款/应还本息")
+    print(f"{'─'*130}")
+
+
 if __name__ == '__main__':
     print(f"{'='*80}")
     print(f"光伏项目投资评估 —— 投资边界 & 出售边界")
@@ -364,7 +489,9 @@ if __name__ == '__main__':
     print(f"融资利率: {interest_rate*100:.0f}% | 期限: {loan_years}年 | 经营期: {operating_years}年")
     print(f"迭代范围: {search_lo}~{search_hi}元/W")
 
-    # 任务1：投资边界
+    print_boundary_conditions()
+
+    # ── 任务1：投资边界 ──
     print(f"\n{'='*80}")
     print(f"  任务1：投资边界（100%融资，最小DSCR≥1.2）")
     print(f"{'='*80}")
@@ -383,7 +510,7 @@ if __name__ == '__main__':
     print_profit_table(r1, "任务1·投资边界", 1.0)
     print_cf_table(r1, "任务1·投资边界", 1.0)
 
-    # 任务4：出售边界
+    # ── 任务4：出售边界 ──
     print(f"\n{'='*80}")
     print(f"  任务4：出售边界（80%融资，全投资IRR≥6% 且 资本金IRR≥8%）")
     print(f"{'='*80}")
@@ -402,7 +529,10 @@ if __name__ == '__main__':
     print_profit_table(r4, "任务4·出售边界", 0.8)
     print_cf_table(r4, "任务4·出售边界", 0.8)
 
-    # 对比总结
+    # ── 第八节：财务指标附表 ──
+    print_appendix_tables(r1, r4)
+
+    # ── 对比总结 ──
     print(f"\n{'='*80}")
     print(f"  投资边界 vs 出售边界 对比")
     print(f"{'='*80}")
