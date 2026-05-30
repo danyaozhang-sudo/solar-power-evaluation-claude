@@ -10,14 +10,12 @@ Logo：~/.openclaw/workspace/skills/wind-power-analysis/assets/jianeng_logo_head
   - 组件衰减率 0.5%/年
 版本匹配：report_template.md（光伏详细结构）
 """
-import os, sys, io, tempfile
+import os, sys, io
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
-from PIL import Image
-from lxml import etree
 
 # ───────────────────────────────────────────────
 # >>> 配置（每个项目修改此处）<<<
@@ -88,6 +86,7 @@ REPORT_DATA = {
     "t4_dscr": 1.2500,
     "t1_lcoe": 0.3200,
     "t4_lcoe": 0.3500,
+    "payback_period": 6.0,
     "t1_avg_ncf": 520,
     "t1_avg_np": 380,
     "t4_avg_ncf": 480,
@@ -124,13 +123,13 @@ REPORT_DATA = {
         [10, "3,032.36"], [15, "2,956.54"], [20, "2,951.05"], [25, "2,940.00"],
     ],
     "equity_cf_table": [
-        [0, "—", "—", "—", "-7,040.00"],
-        [1, 1317.62, 1545.37, 1560.45, 1302.54],
-        [5, 1511.50, 1545.37, 1560.45, 1496.42],
-        [10, 1718.60, 1545.37, 1560.45, 1703.52],
-        [15, 1927.88, 1545.37, 1560.45, 1912.80],
-        [20, 1894.91, 1545.37, 0.00, 3440.28],
-        [25, 1812.56, 1545.37, 0.00, 3357.93],
+        [0, "—", "—", "—", "-7,040.00", "-7,040.00"],
+        [1, 1317.62, 1545.37, 1560.45, 1302.54, "-5,737.46"],
+        [5, 1511.50, 1545.37, 1560.45, 1496.42, "-140.00"],
+        [10, 1718.60, 1545.37, 1560.45, 1703.52, "7,863.00"],
+        [15, 1927.88, 1545.37, 1560.45, 1912.80, "16,903.00"],
+        [20, 1894.91, 1545.37, 0.00, 3440.28, "30,285.00"],
+        [25, 1812.56, 1545.37, 0.00, 3357.93, "47,280.00"],
     ],
     "dscr_table": [
         [1, 3721.79, 10.58, 262.35, 3448.86, 1560.45, 347.03, 1907.48, 1.81],
@@ -210,71 +209,8 @@ def add_header(doc, logo_path):
         run = p.add_run()
         run.add_picture(logo_path, width=Cm(2))
 
-def add_watermark(doc, logo_path, opacity=0.12):
-    """在文档所有页面添加半透明Logo水印（防盗版）"""
-    img = Image.open(logo_path)
-    rgba = img.convert('RGBA')
-    rgba = rgba.resize((360, 300), Image.LANCZOS)
-    r, g, b, a = rgba.split()
-    a = a.point(lambda x: min(x, int(255 * opacity)))
-    watermark = Image.merge('RGBA', (r, g, b, a))
-    tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-    watermark.save(tmp.name, 'PNG')
-    tmp_path = tmp.name
-
-    for section in doc.sections:
-        header = section.header
-        header.is_linked_to_previous = False
-        p = header.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run()
-        run.add_picture(tmp_path, width=Cm(7))
-
-        for drawing in run._element.findall('.//' + qn('w:drawing')):
-            inline = drawing.find(qn('wp:inline'))
-            if inline is not None:
-                extent = inline.find(qn('wp:extent'))
-                cx = extent.get('cx', '0') if extent is not None else '0'
-                cy = extent.get('cy', '0') if extent is not None else '0'
-
-                anchor = etree.SubElement(drawing, qn('wp:anchor'))
-                anchor.set('simplePos', '0')
-                anchor.set('relativeHeight', '0')
-                anchor.set('behindDoc', '1')
-                anchor.set('locked', '0')
-                anchor.set('layoutInCell', '1')
-                anchor.set('allowOverlap', '1')
-
-                sp = etree.SubElement(anchor, qn('wp:simplePos'))
-                sp.set('x', '0'); sp.set('y', '0')
-
-                hp = etree.SubElement(anchor, qn('wp:positionH'))
-                hp.set('relativeFrom', 'page')
-                etree.SubElement(hp, qn('wp:align')).text = 'center'
-
-                vp = etree.SubElement(anchor, qn('wp:positionV'))
-                vp.set('relativeFrom', 'page')
-                etree.SubElement(vp, qn('wp:align')).text = 'center'
-
-                a_ext = etree.SubElement(anchor, qn('wp:extent'))
-                a_ext.set('cx', cx); a_ext.set('cy', cy)
-
-                ee = etree.SubElement(anchor, qn('wp:effectExtent'))
-                ee.set('l', '0'); ee.set('t', '0'); ee.set('r', '0'); ee.set('b', '0')
-
-                etree.SubElement(anchor, qn('wp:wrapNone'))
-
-                for child in list(inline):
-                    tag_local = child.tag.split('}')[-1] if '}' in child.tag else child.tag
-                    if tag_local in ('graphic', 'extent'):
-                        anchor.append(child)
-
-                drawing.remove(inline)
-
-    try: os.unlink(tmp_path)
-    except: pass
-
-
+# add_watermark removed — caused docx "locked for editing" in Word
+# (lxml anchor manipulation corrupted document structure)
 def add_disclaimer(doc):
     """免责声明 — 必须包含"""
     h1(doc, "免责声明")
@@ -407,7 +343,7 @@ def build(doc, R):
     ])
 
     h2(doc, "3.2 任务1：100%融资，最小DSCR≥1.2")
-    table(doc, ["指标", "数值"], [
+    t1_rows = [
         ["最高单瓦投资（元/W）", f"{R['t1_limit']}"],
         ["总投资（亿元）", f"{R['t1_limit']*R['capacity_mw']/100:.2f}"],
         ["度电成本（元/kWh）", f"{R['t1_lcoe']:.4f}"],
@@ -415,7 +351,10 @@ def build(doc, R):
         ["最小DSCR", f"{R['t1_dscr']:.4f}"],
         [f"{R['operating_years']}年平均净现金流量（万元）", f"{R['t1_avg_ncf']:.2f}"],
         [f"{R['operating_years']}年平均净利润（万元）", f"{R['t1_avg_np']:.2f}"],
-    ])
+    ]
+    if R.get('payback_period'):
+        t1_rows.append(["资本金全部回收期（年）", f"{R['payback_period']:.1f}"])
+    table(doc, ["指标", "数值"], t1_rows)
 
     h2(doc, "3.3 任务4：80%融资，全投资IRR≥6%且资本金IRR≥8%")
     table(doc, ["指标", "数值"], [
@@ -445,13 +384,14 @@ def build(doc, R):
     para(doc, f"全投资FCF基于无杠杆附加税（剔除利息税盾）。t=0为初始投资流出{R['t4_limit']*R['capacity_mw']/100:.2f}亿元。全投资IRR={R['t4_irr']:.2f}%。", sz=9)
 
     h2(doc, "表3：资本金投资现金流表（出售边界·80%融资）（单位：万元）")
-    eq_h = ["年份", "净利润", "折旧", "偿还本金", "股权现金流"]
+    eq_h = ["年份", "净利润", "折旧", "偿还本金", "股权现金流", "累计股权现金流"]
     def fmt_val(v):
         if isinstance(v, str): return v
         return f"{v:,.2f}"
-    eq_r = [[str(r[0]), fmt_val(r[1]), fmt_val(r[2]), fmt_val(r[3]), fmt_val(r[4])] for r in R['equity_cf_table']]
+    eq_r = [[str(r[0]), fmt_val(r[1]), fmt_val(r[2]), fmt_val(r[3]), fmt_val(r[4]), fmt_val(r[5])] for r in R['equity_cf_table']]
     table(doc, eq_h, eq_r)
-    para(doc, f"t=0初始资本金投入{R['t4_limit']*R['capacity_mw']/5:,.0f}万元（总投资{R['t4_limit']*R['capacity_mw']/100:.2f}亿×20%）。股权现金流=净利润+折旧-偿还本金。税后资本金IRR={R['t4_equity_irr']:.2f}%。", sz=9)
+    pb_text = f"资本金全部回收期约{R['payback_period']:.1f}年（累计股权现金流转正）。" if R.get('payback_period') else ""
+    para(doc, f"t=0初始资本金投入{R['t4_limit']*R['capacity_mw']/5:,.0f}万元（总投资{R['t4_limit']*R['capacity_mw']/100:.2f}亿×20%）。股权现金流=净利润+折旧-偿还本金。税后资本金IRR={R['t4_equity_irr']:.2f}%。{pb_text}", sz=9)
 
     h2(doc, "表4：偿债覆盖计算表（投资边界·100%融资）（单位：万元）")
     dscr_h = ["年份","EBITDA","增值税及附加","所得税","可用于还款","应还本金","应还利息","应还本息","DSCR"]
@@ -489,7 +429,7 @@ def generate(R):
         s.header_distance = Cm(1.0)
     add_header(doc, LOGO)
     build(doc, R)
-    add_watermark(doc, LOGO)
+    # watermark intentionally removed
     out = os.path.expanduser(
         f"~/.openclaw/workspace/projects/{R['project_name']}{R['capacity_mw']}MW光伏/"
         f"{R['project_name']}{R['capacity_mw']}MW光伏_评估报告_{TODAY}.docx"

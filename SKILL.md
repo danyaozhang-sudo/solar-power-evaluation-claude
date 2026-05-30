@@ -512,12 +512,14 @@ description: 光伏项目投资评估。适用场景：用户要求评估光伏�
 
 | 检查项 | 说明 |
 |:------|:----|
-| ✅ 江能 Logo 页眉 | 2cm 宽居右，文件路径 `~/.hermes/skills/openclaw-imports/wind-power-analysis/assets/jianeng_logo_header.png` |
+| ✅ 江能 Logo 页眉 | 2cm 宽居右，文件路径 `~/.openclaw/workspace/skills/wind-power-analysis/assets/jianeng_logo_header.png` |
 | ✅ 标题含品牌 | "江能能源 · {项目名}{装机}MW光伏项目" |
-| ✅ 免责声明 | 完整八段法律免责（见下方模板） |
+| ✅ 免责声明 | 完整七段法律免责（见下方模板） |
 | ✅ 深蓝标题 | #1B3A5C 黑体 13-16pt |
 | ✅ 仿宋正文 | 11pt |
 | ✅ 深蓝白字表头 | 表头行背景 #1B3A5C 白字 |
+| ✅ 页面布局 | A4，上2.5cm/下2.2cm/左右2.5cm边距，页眉顶距1.0cm |
+| ✅ 文件命名 | {项目名}_{容量}MW光伏项目投资评估报告_{YYYYMMDD}.docx |
 
 #### Logo 页眉代码
 
@@ -525,7 +527,7 @@ description: 光伏项目投资评估。适用场景：用户要求评估光伏�
 from docx.shared import Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-LOGO = os.path.expanduser("~/.hermes/skills/openclaw-imports/wind-power-analysis/assets/jianeng_logo_header.png")
+LOGO = os.path.expanduser("~/.openclaw/workspace/skills/wind-power-analysis/assets/jianeng_logo_header.png")
 
 for section in doc.sections:
     header = section.header
